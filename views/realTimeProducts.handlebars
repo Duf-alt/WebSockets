@@ -1,0 +1,12 @@
+<h1>{{title}}</h1>
+
+<form id="productForm">
+  <input type="text" id="title" placeholder="Nombre del producto" required />
+  <input type="number" id="price" placeholder="Precio" required />
+  <button type="submit">Agregar</button>
+</form>
+
+<ul id="productList"></ul>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/realtime.js"></script>
