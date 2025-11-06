@@ -1,41 +1,24 @@
-const express = require("express");
-const router = express.Router();
-
-let products = [
-  { id: 1, title: "Mouse", price: 50 },
-  { id: 2, title: "Teclado", price: 80 }
-];
-
-// Obtener todos
-router.get("/", (req, res) => res.json(products));
-
-// Obtener por ID
-router.get("/:pid", (req, res) => {
-  const product = products.find(p => p.id === parseInt(req.params.pid));
-  product ? res.json(product) : res.status(404).json({ error: "Producto no encontrado" });
-});
-
-// Crear nuevo
+// Agregar producto
 router.post("/", (req, res) => {
-  const newProduct = { id: Date.now(), ...req.body };
+  const products = getProducts();
+  const { title, price, description, stock } = req.body;
+
+  if (!title || !price || !description || !stock) {
+    return res.status(400).json({ message: "Todos los campos son obligatorios" });
+  }
+
+  const newProduct = {
+    id: products.length > 0 ? products[products.length - 1].id + 1 : 1,
+    title,
+    price,
+    description,
+    stock,
+  };
+
   products.push(newProduct);
-  res.status(201).json(newProduct);
-});
+  saveProducts(products);
 
-// Actualizar
-router.put("/:pid", (req, res) => {
-  const pid = parseInt(req.params.pid);
-  const index = products.findIndex(p => p.id === pid);
-  if (index === -1) return res.status(404).json({ error: "Producto no encontrado" });
-  products[index] = { ...products[index], ...req.body };
-  res.json(products[index]);
-});
+  io.emit("updateProducts", products);
 
-// Eliminar
-router.delete("/:pid", (req, res) => {
-  const pid = parseInt(req.params.pid);
-  products = products.filter(p => p.id !== pid);
-  res.json({ message: "Producto eliminado" });
+  res.json({ message: "Producto agregado", product: newProduct });
 });
-
-module.exports = router;

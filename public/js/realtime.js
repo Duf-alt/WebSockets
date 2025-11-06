@@ -1,27 +1,34 @@
 const socket = io();
-const form = document.getElementById("productForm");
-const list = document.getElementById("productList");
 
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const title = document.getElementById("title").value.trim();
-  const price = parseFloat(document.getElementById("price").value);
-  if (!title || isNaN(price)) return alert("Completa todos los campos");
+const productList = document.getElementById("productList");
+const form = document.getElementById("realtimeForm");
 
-  socket.emit("newProduct", { title, price });
-  form.reset();
-});
+socket.on("products", (products) => {
+  productList.innerHTML = "";
 
-socket.on("productList", (products) => {
-  list.innerHTML = "";
   products.forEach((p) => {
     const li = document.createElement("li");
-    li.innerHTML = `<strong>${p.title}</strong> - $${p.price} 
-      <button onclick="deleteProduct(${p.id})">❌ Eliminar</button>`;
-    list.appendChild(li);
+    li.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-center");
+    li.innerHTML = `
+      <div><strong>${p.title}</strong> - ${p.description} ($${p.price})</div>
+      <button class="btn btn-danger btn-sm delete-btn" data-id="${p._id}">Eliminar</button>
+    `;
+    productList.appendChild(li);
+  });
+
+  document.querySelectorAll(".delete-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      socket.emit("deleteProduct", id);
+    });
   });
 });
 
-function deleteProduct(id) {
-  socket.emit("deleteProduct", id);
-}
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const title = document.getElementById("rtTitle").value;
+  const description = document.getElementById("rtDescription").value;
+  const price = document.getElementById("rtPrice").value;
+  socket.emit("newProduct", { title, description, price });
+  form.reset();
+});

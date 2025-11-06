@@ -1,3 +1,49 @@
+<h1 class="mb-4 text-center">🏠 Lista de Productos</h1>
 
-<h1>Bienvenido a tu Ecommerce</h1>
-<p>Servidor funcionando con Handlebars 🎉</p>
+<form id="productForm" class="border rounded p-3 mb-4 bg-white shadow-sm">
+  <h4>Agregar nuevo producto</h4>
+  <div class="mb-2">
+    <input type="text" id="title" placeholder="Título" class="form-control" required>
+  </div>
+  <div class="mb-2">
+    <input type="text" id="description" placeholder="Descripción" class="form-control" required>
+  </div>
+  <div class="mb-2">
+    <input type="number" id="price" placeholder="Precio" class="form-control" required>
+  </div>
+  <button type="submit" class="btn btn-success">Agregar producto</button>
+</form>
+
+<h3>Productos actuales</h3>
+<ul class="list-group">
+  {{#each products}}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <div>
+        <strong>{{title}}</strong> - {{description}} (${{price}})
+      </div>
+    </li>
+  {{/each}}
+</ul>
+
+<script>
+  const form = document.getElementById('productForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('title').value;
+    const description = document.getElementById('description').value;
+    const price = document.getElementById('price').value;
+
+    const res = await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, price })
+    });
+
+    if (res.ok) {
+      alert('✅ Producto agregado correctamente');
+      form.reset();
+    } else {
+      alert('❌ Error al agregar el producto');
+    }
+  });
+</script>

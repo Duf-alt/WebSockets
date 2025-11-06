@@ -1,12 +1,71 @@
-<h1>{{title}}</h1>
+<h1>🛍️ Productos en Tiempo Real</h1>
 
-<form id="productForm">
-  <input type="text" id="title" placeholder="Nombre del producto" required />
-  <input type="number" id="price" placeholder="Precio" required />
+<ul id="productList">
+  {{#each products}}
+    <li data-id="{{this._id}}">
+      <strong>{{this.title}}</strong> - ${{this.price}}
+      <button class="delete-btn">🗑️ Eliminar</button>
+    </li>
+  {{/each}}
+</ul>
+
+<hr>
+
+<h2>Agregar nuevo producto</h2>
+<form id="addProductForm">
+  <input type="text" name="title" placeholder="Título" required />
+  <input type="number" name="price" placeholder="Precio" required />
   <button type="submit">Agregar</button>
 </form>
 
-<ul id="productList"></ul>
-
 <script src="/socket.io/socket.io.js"></script>
-<script src="/js/realtime.js"></script>
+<script>
+  const socket = io();
+
+  const productList = document.getElementById("productList");
+  const form = document.getElementById("addProductForm");
+
+  // Render dinámico de productos
+  const renderProducts = (products) => {
+    productList.innerHTML = "";
+    products.forEach((p) => {
+      const li = document.createElement("li");
+      li.dataset.id = p._id;
+      li.innerHTML = `
+        <strong>${p.title}</strong> - $${p.price}
+        <button class="delete-btn">🗑️ Eliminar</button>
+      `;
+      productList.appendChild(li);
+    });
+  };
+
+  // Escucha actualizaciones desde el servidor
+  socket.on("updateProducts", (products) => {
+    renderProducts(products);
+  });
+
+  // Enviar nuevo producto
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    await fetch("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    form.reset();
+  });
+
+  // Delegación de eventos para eliminar producto
+  productList.addEventListener("click", async (e) => {
+    if (e.target.classList.contains("delete-btn")) {
+      const id = e.target.closest("li").dataset.id;
+
+      // Confirmación antes de eliminar
+      const confirmation = window.confirm("¿Estás seguro de que deseas eliminar este producto?");
+      if (confirmation) {
+        await fetch(`/api/products/${id}`, { method: "DELETE" });
+      }
+    }
+  });
+</script>

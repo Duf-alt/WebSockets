@@ -1,102 +1,133 @@
 import express from "express";
+import mongoose from "mongoose";
 import { engine } from "express-handlebars";
 import { Server } from "socket.io";
+import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
-import net from "net";
+import productsRouter from "./routes/products.router.js";
+import ProductModel from "./models/Product.js";
 
-const app = express();
+dotenv.config();
 
-// Obtener rutas absolutas (para ES Modules)
+// Obtener __dirname en ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
+const app = express();
 
-// Configuración de Handlebars
+// -------------------------
+// 🔧 CONFIGURACIÓN BASE
+// -------------------------
 app.engine("handlebars", engine());
 app.set("view engine", "handlebars");
 app.set("views", path.join(__dirname, "views"));
 
-// Archivo de productos (persistencia local)
-const productsFile = path.join(__dirname, "products.json");
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, "public")));
 
-// Leer productos desde el archivo
-const getProducts = () => {
-  if (!fs.existsSync(productsFile)) return [];
-  const data = fs.readFileSync(productsFile, "utf-8");
-  return JSON.parse(data || "[]");
-};
+// -------------------------
+// 🧩 RUTAS
+// -------------------------
+app.use("/api/products", productsRouter);
 
-// Guardar productos en el archivo
-const saveProducts = (products) => {
-  fs.writeFileSync(productsFile, JSON.stringify(products, null, 2));
-};
-
-// Rutas básicas
-app.get("/", (req, res) => {
-  res.render("home");
+// Vista principal (home)
+app.get("/", async (req, res) => {
+  try {
+    const products = await ProductModel.find().lean();
+    res.render("home", { products });
+  } catch (err) {
+    console.error("❌ Error al cargar productos:", err);
+    res.status(500).send("Error al cargar productos");
+  }
 });
 
-app.get("/realtimeproducts", (req, res) => {
-  const products = getProducts();
-  res.render("realTimeProducts", { products });
+// Vista de productos en tiempo real (WebSockets)
+app.get("/realtimeproducts", async (req, res) => {
+  try {
+    const products = await ProductModel.find().lean();
+    res.render("realTimeProducts", { products });
+  } catch (err) {
+    console.error("❌ Error al cargar productos:", err);
+    res.status(500).send("Error al cargar productos");
+  }
 });
 
-// ------------------------------------------------------
-// 🧠 Función para detectar el primer puerto disponible
-// ------------------------------------------------------
+// -------------------------
+// 💾 CONEXIÓN A MONGODB
+// -------------------------
+const mongoURL = process.env.MONGO_URL;
+
+if (!mongoURL) {
+  console.error("❌ ERROR: No se encontró la variable MONGO_URL en tu archivo .env");
+  process.exit(1);
+}
+
+try {
+  await mongoose.connect(mongoURL);
+  console.log("✅ Conectado correctamente a MongoDB");
+
+  // Log de productos al iniciar
+  const productos = await ProductModel.find();
+  console.log(`🛒 Productos cargados desde MongoDB: ${productos.length}`);
+} catch (error) {
+  console.error("❌ Error al conectar con MongoDB:", error.message);
+}
+
+// -------------------------
+// 🚀 SERVIDOR EXPRESS + SOCKET.IO
+// -------------------------
 const DEFAULT_PORT = 8080;
 
-const findAvailablePort = (port) => {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-    server.unref();
-    server.on("error", () => {
-      resolve(findAvailablePort(port + 1)); // prueba el siguiente
+const startServer = async (port) => {
+  const server = app.listen(port, () => {
+    console.log(`🚀 Servidor activo en http://localhost:${port}`);
+  });
+
+  server.on("error", async (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.warn(`⚠️  El puerto ${port} está en uso. Probando otro...`);
+      startServer(port + 1); // intenta el siguiente
+    } else {
+      console.error("❌ Error al iniciar el servidor:", err);
+    }
+  });
+
+  // WebSockets
+  const io = new Server(server);
+  io.on("connection", (socket) => {
+    console.log("🟢 Cliente conectado vía WebSocket");
+
+    // Escuchar creación de producto en tiempo real
+    socket.on("nuevoProducto", async (data) => {
+      try {
+        const nuevoProducto = new ProductModel(data);
+        await nuevoProducto.save();
+        const productosActualizados = await ProductModel.find().lean();
+        io.emit("actualizarProductos", productosActualizados);
+      } catch (err) {
+        console.error("❌ Error al agregar producto vía socket:", err);
+      }
     });
-    server.listen(port, () => {
-      server.close(() => {
-        resolve(port);
-      });
+
+    // Escuchar eliminación de producto
+    socket.on("eliminarProducto", async (id) => {
+      try {
+        await ProductModel.findByIdAndDelete(id);
+        const productosActualizados = await ProductModel.find().lean();
+        io.emit("actualizarProductos", productosActualizados);
+      } catch (err) {
+        console.error("❌ Error al eliminar producto vía socket:", err);
+      }
     });
+  });
+
+  // Middleware para tener acceso a io desde rutas
+  app.use((req, res, next) => {
+    req.io = io;
+    next();
   });
 };
 
-// ------------------------------------------------------
-// 🚀 Iniciar el servidor con puerto disponible
-// ------------------------------------------------------
-findAvailablePort(DEFAULT_PORT).then((PORT) => {
-  const httpServer = app.listen(PORT, () =>
-    console.log(`🚀 Servidor escuchando en http://localhost:${PORT}`)
-  );
-
-  // ------------------------------------------------------
-  // 🔌 WebSockets (Socket.io)
-  // ------------------------------------------------------
-  const io = new Server(httpServer);
-
-  io.on("connection", (socket) => {
-    console.log("🟢 Nuevo cliente conectado");
-
-    // Escucha de producto nuevo
-    socket.on("newProduct", (product) => {
-      const products = getProducts();
-      products.push(product);
-      saveProducts(products);
-      io.emit("updateProducts", products);
-    });
-
-    // Escucha de eliminación
-    socket.on("deleteProduct", (id) => {
-      let products = getProducts();
-      products = products.filter((p) => p.id !== id);
-      saveProducts(products);
-      io.emit("updateProducts", products);
-    });
-  });
-});
+startServer(DEFAULT_PORT);
